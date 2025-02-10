@@ -15,6 +15,8 @@
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
+// #define PRINT_DEBUG 1
+
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
 __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const glm::vec3* means, glm::vec3 campos, const float* shs, bool* clamped)
@@ -97,6 +99,17 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 		viewmatrix[2], viewmatrix[6], viewmatrix[10]);
 
 	glm::mat3 T = W * J;
+#if PRINT_DEBUG
+	printf("t.x = %.7f, t.y = %.7f, t.z = %.7f\n", t.x, t.y, t.z);
+	printf("focal_x = %.7f, focal_y = %.7f\n", focal_x, focal_y);
+	printf("J = (%.7f, %.7f, %.7f)\n", J[0][0], J[0][1], J[0][2]);
+	printf("J = (%.7f, %.7f, %.7f)\n", J[1][0], J[1][1], J[1][2]);
+	printf("J = (%.7f, %.7f, %.7f)\n", J[2][0], J[2][1], J[2][2]);
+	printf("T = (%.7f, %.7f, %.7f)\n", T[0][0], T[0][1], T[0][2]);
+	printf("T = (%.7f, %.7f, %.7f)\n", T[1][0], T[1][1], T[1][2]);
+	printf("T = (%.7f, %.7f, %.7f)\n", T[2][0], T[2][1], T[2][2]);
+#endif
+
 
 	glm::mat3 Vrk = glm::mat3(
 		cov3D[0], cov3D[1], cov3D[2],
@@ -104,7 +117,6 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 		cov3D[2], cov3D[4], cov3D[5]);
 
 	glm::mat3 cov = glm::transpose(T) * glm::transpose(Vrk) * T;
-
 	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) };
 }
 
@@ -195,7 +207,6 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
 	float p_w = 1.0f / (p_hom.w + 0.0000001f);
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
-
 	// If 3D covariance matrix is precomputed, use it, otherwise compute
 	// from scaling and rotation parameters. 
 	const float* cov3D;
@@ -211,12 +222,15 @@ __global__ void preprocessCUDA(int P, int D, int M,
 
 	// Compute 2D screen-space covariance matrix
 	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix);
+	// print out the covariance
 
 	constexpr float h_var = 0.3f;
 	const float det_cov = cov.x * cov.z - cov.y * cov.y;
 	cov.x += h_var;
 	cov.z += h_var;
 	const float det_cov_plus_h_cov = cov.x * cov.z - cov.y * cov.y;
+	// printf("det_cov = %f, det_cov_plus_h_cov = %f\n", det_cov, det_cov_plus_h_cov);
+	// printf("cov = (%f, %f, %f)\n", cov.x, cov.y, cov.z);
 	float h_convolution_scaling = 1.0f;
 
 	if(antialiasing)
@@ -228,7 +242,14 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	if (det == 0.0f)
 		return;
 	float det_inv = 1.f / det;
+
 	float3 conic = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv };
+
+#if PRINT_DEBUG
+	printf("det = %f\n", det);
+	printf("inverse cov = (%f, %f, %f)\n", conic.x, conic.y, conic.z);
+	printf("2d cov = (%f, %f, %f)\n", cov.x, cov.y, cov.z);
+#endif
 
 	// Compute extent in screen space (by finding eigenvalues of
 	// 2D covariance matrix). Use extent to compute a bounding rectangle
@@ -255,17 +276,28 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	}
 
 	// Store some useful helper data for the next steps.
+	// printf("p_view = (%f, %f, %f)\n", p_view.x, p_view.y, p_view.z);
 	depths[idx] = p_view.z;
 	radii[idx] = my_radius;
 	points_xy_image[idx] = point_image;
+	// printf("point_image = (%f, %f)\n", point_image.x, point_image.y);
 	// Inverse 2D covariance and opacity neatly pack into one float4
 	float opacity = opacities[idx];
 
-
+	// printf("opacity = %f\n", opacity);
+	// printf("h_convolution_scaling = %f\n", h_convolution_scaling);
 	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling };
 
 
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
+	// printf("rect_max.y - rect_min.y = %d\n", rect_max.y - rect_min.y);
+	// printf("rect_max.x - rect_min.x = %d\n", rect_max.x - rect_min.x);
+	// printf("(rect_max.y - rect_min.y) * (rect_max.x - rect_min.x) = %d\n", (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x));
+	// printf("tiles_touched[%d] = %d\n", idx, tiles_touched[idx]);
+	// printf("idx = %d\n", idx);
+	// printf("point image = (%f, %f)\n", point_image.x, point_image.y);
+	// printf("rect_min = (%d, %d), rect_max = (%d, %d)\n", rect_min.x, rect_min.y, rect_max.x, rect_max.y);
+
 }
 
 // Main rasterization method. Collaboratively works on one tile per
@@ -296,6 +328,9 @@ renderCUDA(
 	uint32_t pix_id = W * pix.y + pix.x;
 	float2 pixf = { (float)pix.x, (float)pix.y };
 
+	int target_x = 218;
+	int target_y = 252;
+	
 	// Check if this thread is associated with a valid pixel or outside.
 	bool inside = pix.x < W&& pix.y < H;
 	// Done threads can help with fetching, but don't rasterize
@@ -338,6 +373,9 @@ renderCUDA(
 		}
 		block.sync();
 
+		// load them before I return
+		if (pixf.x != target_x || pixf.y != target_y)
+			return;
 		// Iterate over current batch
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
@@ -350,6 +388,10 @@ renderCUDA(
 			float2 d = { xy.x - pixf.x, xy.y - pixf.y };
 			float4 con_o = collected_conic_opacity[j];
 			float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
+			// printf("power = %f\n", power);
+			// printf("con_o = (%f, %f, %f, %f)\n", con_o.x, con_o.y, con_o.z, con_o.w);
+			// printf("power > 0.0f = %d\n", power > 0.0f);
+			// printf("d = (%f, %f)\n", d.x, d.y);
 			if (power > 0.0f)
 				continue;
 
@@ -358,19 +400,36 @@ renderCUDA(
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
 			float alpha = min(0.99f, con_o.w * exp(power));
+			// printf("alpha = %f\n", alpha);
 			if (alpha < 1.0f / 255.0f)
 				continue;
 			float test_T = T * (1 - alpha);
+			// printf("test_T = %f\n", test_T);
 			if (test_T < 0.0001f)
 			{
 				done = true;
 				continue;
 			}
+#if PRINT_DEBUG
+			if (pixf.x == target_x && pixf.y == target_y)
+			{
+				printf("alpha = %f, exponential_power = %f, collected_xy[j] = (%f, %f), T = %f, con_o = (%f, %f, %f, %f)\n", 
+				alpha, 
+				exp(power),
+				collected_xy[j].x, 
+				collected_xy[j].y, 
+				T, 
+				con_o.x, 
+				con_o.y, 
+				con_o.z,
+				con_o.w);
+				printf("power = %f\n", power);
+			}
+#endif
 
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
-
 			if(invdepth)
 			expected_invdepth += (1 / depths[collected_id[j]]) * alpha * T;
 
@@ -381,7 +440,8 @@ renderCUDA(
 			last_contributor = contributor;
 		}
 	}
-
+	if (pixf.x != target_x || pixf.y != target_y)
+		return;
 	// All threads that treat valid pixel write out their final
 	// rendering data to the frame and auxiliary buffers.
 	if (inside)
@@ -390,6 +450,13 @@ renderCUDA(
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
+#if PRINT_DEBUG
+		if (pixf.x == target_x && pixf.y == target_y)
+		{
+			printf("T = %f\n", T);
+			printf("C = (%f, %f, %f)\n", C[0], C[1], C[2]);
+		}
+#endif
 
 		if (invdepth)
 		invdepth[pix_id] = expected_invdepth;// 1. / (expected_depth + T * 1e3);
