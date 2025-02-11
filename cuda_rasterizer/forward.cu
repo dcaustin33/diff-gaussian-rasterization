@@ -15,7 +15,9 @@
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
-// #define PRINT_DEBUG 1
+#define PRINT_DEBUG 1
+#define TARGET_PIXEL_X 217
+#define TARGET_PIXEL_Y 251
 
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
@@ -99,16 +101,16 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 		viewmatrix[2], viewmatrix[6], viewmatrix[10]);
 
 	glm::mat3 T = W * J;
-#if PRINT_DEBUG
-	printf("t.x = %.7f, t.y = %.7f, t.z = %.7f\n", t.x, t.y, t.z);
-	printf("focal_x = %.7f, focal_y = %.7f\n", focal_x, focal_y);
-	printf("J = (%.7f, %.7f, %.7f)\n", J[0][0], J[0][1], J[0][2]);
-	printf("J = (%.7f, %.7f, %.7f)\n", J[1][0], J[1][1], J[1][2]);
-	printf("J = (%.7f, %.7f, %.7f)\n", J[2][0], J[2][1], J[2][2]);
-	printf("T = (%.7f, %.7f, %.7f)\n", T[0][0], T[0][1], T[0][2]);
-	printf("T = (%.7f, %.7f, %.7f)\n", T[1][0], T[1][1], T[1][2]);
-	printf("T = (%.7f, %.7f, %.7f)\n", T[2][0], T[2][1], T[2][2]);
-#endif
+// #if PRINT_DEBUG
+// 	printf("t.x = %.7f, t.y = %.7f, t.z = %.7f\n", t.x, t.y, t.z);
+// 	printf("focal_x = %.7f, focal_y = %.7f\n", focal_x, focal_y);
+// 	printf("J = (%.7f, %.7f, %.7f)\n", J[0][0], J[0][1], J[0][2]);
+// 	printf("J = (%.7f, %.7f, %.7f)\n", J[1][0], J[1][1], J[1][2]);
+// 	printf("J = (%.7f, %.7f, %.7f)\n", J[2][0], J[2][1], J[2][2]);
+// 	printf("T = (%.7f, %.7f, %.7f)\n", T[0][0], T[0][1], T[0][2]);
+// 	printf("T = (%.7f, %.7f, %.7f)\n", T[1][0], T[1][1], T[1][2]);
+// 	printf("T = (%.7f, %.7f, %.7f)\n", T[2][0], T[2][1], T[2][2]);
+// #endif
 
 
 	glm::mat3 Vrk = glm::mat3(
@@ -229,8 +231,6 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	cov.x += h_var;
 	cov.z += h_var;
 	const float det_cov_plus_h_cov = cov.x * cov.z - cov.y * cov.y;
-	// printf("det_cov = %f, det_cov_plus_h_cov = %f\n", det_cov, det_cov_plus_h_cov);
-	// printf("cov = (%f, %f, %f)\n", cov.x, cov.y, cov.z);
 	float h_convolution_scaling = 1.0f;
 
 	if(antialiasing)
@@ -245,11 +245,11 @@ __global__ void preprocessCUDA(int P, int D, int M,
 
 	float3 conic = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv };
 
-#if PRINT_DEBUG
-	printf("det = %f\n", det);
-	printf("inverse cov = (%f, %f, %f)\n", conic.x, conic.y, conic.z);
-	printf("2d cov = (%f, %f, %f)\n", cov.x, cov.y, cov.z);
-#endif
+// #if PRINT_DEBUG
+// 	printf("det = %f\n", det);
+// 	printf("inverse cov = (%f, %f, %f)\n", conic.x, conic.y, conic.z);
+// 	printf("2d cov = (%f, %f, %f)\n", cov.x, cov.y, cov.z);
+// #endif
 
 	// Compute extent in screen space (by finding eigenvalues of
 	// 2D covariance matrix). Use extent to compute a bounding rectangle
@@ -262,6 +262,13 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
 	uint2 rect_min, rect_max;
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
+// #if PRINT_DEBUG
+// 	printf("point_image = (%f, %f)\n", point_image.x, point_image.y);
+// 	printf("my_radius = %f\n", my_radius);
+// 	printf("point.y + my_radius = %f\n", point_image.y + my_radius);
+// 	printf("grid.y = %d\n", grid.y);
+// 	printf("radius = %f, rect_min = (%d, %d), rect_max = (%d, %d) tiles_touched = %d\n", my_radius, rect_min.x, rect_min.y, rect_max.x, rect_max.y, (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x));
+// #endif
 	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
 		return;
 
@@ -328,8 +335,10 @@ renderCUDA(
 	uint32_t pix_id = W * pix.y + pix.x;
 	float2 pixf = { (float)pix.x, (float)pix.y };
 
-	int target_x = 218;
-	int target_y = 252;
+#if PRINT_DEBUG
+	int target_x = TARGET_PIXEL_X;
+	int target_y = TARGET_PIXEL_Y;
+#endif
 	
 	// Check if this thread is associated with a valid pixel or outside.
 	bool inside = pix.x < W&& pix.y < H;
@@ -373,9 +382,6 @@ renderCUDA(
 		}
 		block.sync();
 
-		// load them before I return
-		if (pixf.x != target_x || pixf.y != target_y)
-			return;
 		// Iterate over current batch
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
@@ -413,17 +419,31 @@ renderCUDA(
 #if PRINT_DEBUG
 			if (pixf.x == target_x && pixf.y == target_y)
 			{
-				printf("alpha = %f, exponential_power = %f, collected_xy[j] = (%f, %f), T = %f, con_o = (%f, %f, %f, %f)\n", 
-				alpha, 
+				// printf("alpha = %f, exponential_power = %f, collected_xy[j] = (%f, %f), T = %f, con_o = (%f, %f, %f, %f)\n", 
+				// alpha, 
+				// exp(power),
+				// collected_xy[j].x, 
+				// collected_xy[j].y, 
+				// T, 
+				// con_o.x, 
+				// con_o.y, 
+				// con_o.z,
+				// con_o.w);
+				// printf("power = %f\n", power);
+				printf("test_T = %f, gaussian_power = %f alpha = %f, mean = (%f, %f), opacity = %f color: %f, %f, %f, inverse_covariance: %f, %f, %f\n", 
+				test_T, 
 				exp(power),
-				collected_xy[j].x, 
-				collected_xy[j].y, 
-				T, 
-				con_o.x, 
-				con_o.y, 
-				con_o.z,
-				con_o.w);
-				printf("power = %f\n", power);
+				alpha,
+				collected_xy[j].x,
+				collected_xy[j].y,
+				collected_conic_opacity[j].w,
+				features[collected_id[j] * CHANNELS + 0],
+				features[collected_id[j] * CHANNELS + 1],
+				features[collected_id[j] * CHANNELS + 2],
+				collected_conic_opacity[j].x,
+				collected_conic_opacity[j].y,
+				collected_conic_opacity[j].z
+				);
 			}
 #endif
 
@@ -440,8 +460,10 @@ renderCUDA(
 			last_contributor = contributor;
 		}
 	}
+#if PRINT_DEBUG
 	if (pixf.x != target_x || pixf.y != target_y)
 		return;
+#endif
 	// All threads that treat valid pixel write out their final
 	// rendering data to the frame and auxiliary buffers.
 	if (inside)
@@ -450,13 +472,13 @@ renderCUDA(
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
-#if PRINT_DEBUG
-		if (pixf.x == target_x && pixf.y == target_y)
-		{
-			printf("T = %f\n", T);
-			printf("C = (%f, %f, %f)\n", C[0], C[1], C[2]);
-		}
-#endif
+// #if PRINT_DEBUG
+// 		if (pixf.x == target_x && pixf.y == target_y)
+// 		{
+// 			printf("T = %f\n", T);
+// 			printf("C = (%f, %f, %f)\n", C[0], C[1], C[2]);
+// 		}
+// #endif
 
 		if (invdepth)
 		invdepth[pix_id] = expected_invdepth;// 1. / (expected_depth + T * 1e3);

@@ -138,7 +138,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             None,
         )
         print("GETTING GRADIENTS")
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         return grads
 

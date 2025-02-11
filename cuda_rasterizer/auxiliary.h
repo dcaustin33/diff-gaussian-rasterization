@@ -170,6 +170,7 @@ __forceinline__ __device__ bool in_frustum(int idx,
 			printf("Point is filtered although prefiltered is set. This shouldn't happen!");
 			__trap();
 		}
+		// printf("p_hom = (%f, %f, %f, %f). p_view = (%f, %f, %f)\n", p_hom.x, p_hom.y, p_hom.z, p_hom.w, p_view.x, p_view.y, p_view.z);
 		return false;
 	}
 	return true;
