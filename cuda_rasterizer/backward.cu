@@ -9,6 +9,9 @@
  * For inquiries contact  george.drettakis@inria.fr
  */
 
+#define PRINT_DEBUG 1
+#define TARGET_PIXEL_X 217
+#define TARGET_PIXEL_Y 251
 #include "backward.h"
 #include "auxiliary.h"
 #include <cooperative_groups.h>
@@ -551,6 +554,11 @@ renderCUDA(
 		// Iterate over Gaussians
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
+#if PRINT_DEBUG
+			if (pix.x != TARGET_PIXEL_X || pix.y != TARGET_PIXEL_Y) {
+				continue;
+			}
+#endif
 			// Keep track of current Gaussian ID. Skip, if this one
 			// is behind the last contributor for this pixel.
 			contributor--;
@@ -612,6 +620,7 @@ renderCUDA(
 			float bg_dot_dpixel = 0;
 			for (int i = 0; i < C; i++)
 				bg_dot_dpixel += bg_color[i] * dL_dpixel[i];
+
 			dL_dalpha += (-T_final / (1.f - alpha)) * bg_dot_dpixel;
 
 
@@ -630,11 +639,24 @@ renderCUDA(
 			atomicAdd(&dL_dconic2D[global_id].x, -0.5f * gdx * d.x * dL_dG);
 			atomicAdd(&dL_dconic2D[global_id].y, -0.5f * gdx * d.y * dL_dG);
 			atomicAdd(&dL_dconic2D[global_id].w, -0.5f * gdy * d.y * dL_dG);
-
 			// Update gradients w.r.t. opacity of the Gaussian
 			atomicAdd(&(dL_dopacity[global_id]), G * dL_dalpha);
+#if PRINT_DEBUG
+			if (pix.x == TARGET_PIXEL_X && pix.y == TARGET_PIXEL_Y) {
+				printf("\n\nglobal_id = %d, dl_dpixel = %.20f %.20f %.20f, \ndl_dalpha = %.20f, \ndl_dopacity = %.20f\n G = %.20f\n\n", 
+				global_id, dL_dpixel[0], dL_dpixel[1], dL_dpixel[2], dL_dalpha, dL_dopacity[global_id], G);
+			}
+			if (global_id == 3) {
+				printf("\n\nglobal_id = %d, \ndl_dalpha = %.20f, G = %.20f\n\n", 
+				global_id, dL_dalpha, G);
+			}
+#endif
 		}
 	}
+// #if PRINT_DEBUG
+// 	printf("\n\n Global id: %d, dL_dopacity = %.20f\n\n", 
+// 	3, dL_dopacity[3]);
+// #endif
 }
 
 void BACKWARD::preprocess(
