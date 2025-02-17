@@ -9,7 +9,7 @@
  * For inquiries contact  george.drettakis@inria.fr
  */
 
-#define PRINT_DEBUG 1
+// #define PRINT_DEBUG 1
 #define TARGET_PIXEL_X 217
 #define TARGET_PIXEL_Y 251
 #include "backward.h"
@@ -563,7 +563,7 @@ renderCUDA(
 			// is behind the last contributor for this pixel.
 			contributor--;
 			if (contributor >= last_contributor)
-				continue;
+				continue ;
 
 			// Compute blending values, as before.
 			const float2 xy = collected_xy[j];
@@ -577,7 +577,6 @@ renderCUDA(
 			const float alpha = min(0.99f, con_o.w * G);
 			if (alpha < 1.0f / 255.0f)
 				continue;
-
 			T = T / (1.f - alpha);
 			const float dchannel_dcolor = alpha * T;
 
@@ -599,7 +598,9 @@ renderCUDA(
 				// Atomic, since this pixel is just one of potentially
 				// many that were affected by this Gaussian.
 				atomicAdd(&(dL_dcolors[global_id * C + ch]), dchannel_dcolor * dL_dchannel);
+
 			}
+
 			// Propagate gradients from inverse depth to alphaas and
 			// per Gaussian inverse depths
 			if (dL_dinvdepths)
@@ -641,22 +642,42 @@ renderCUDA(
 			atomicAdd(&dL_dconic2D[global_id].w, -0.5f * gdy * d.y * dL_dG);
 			// Update gradients w.r.t. opacity of the Gaussian
 			atomicAdd(&(dL_dopacity[global_id]), G * dL_dalpha);
-#if PRINT_DEBUG
+#ifdef PRINT_DEBUG
 			if (pix.x == TARGET_PIXEL_X && pix.y == TARGET_PIXEL_Y) {
-				printf("\n\nglobal_id = %d, dl_dpixel = %.20f %.20f %.20f, \ndl_dalpha = %.20f, \ndl_dopacity = %.20f\n G = %.20f\n\n", 
-				global_id, dL_dpixel[0], dL_dpixel[1], dL_dpixel[2], dL_dalpha, dL_dopacity[global_id], G);
-			}
-			if (global_id == 3) {
-				printf("\n\nglobal_id = %d, \ndl_dalpha = %.20f, G = %.20f\n\n", 
-				global_id, dL_dalpha, G);
+				printf("i: %d, \ngaussian_idx: %d\n"
+				       "dl_dalpha: %.10f\n"
+				       "dl_dcolors: [%.10f, %.10f, %.10f]\n"
+				       "accum_rec: [%.10f, %.10f, %.10f]\n"
+				       "last_color: [%.10f, %.10f, %.10f]\n"
+				       "last_alpha: %.10f\n"
+				       "alpha: %.10f\n"
+				       "t: %.10f\n"
+				       "dl_dchannel_dcolor: %.10f\n"
+				       "dL_dpixel: %.10f"
+					   "opacity add: %.10f\n\n\n",
+				       j, global_id,
+				       dL_dalpha,
+				       dL_dcolors[global_id * C + 0],
+				       dL_dcolors[global_id * C + 1],
+				       dL_dcolors[global_id * C + 2],
+				       accum_rec[0], accum_rec[1], accum_rec[2],
+				       last_color[0], last_color[1], last_color[2],
+				       last_alpha,
+				       alpha,
+				       T,
+				       dchannel_dcolor,
+				       dL_dpixel[0],
+					   G * dL_dalpha);
 			}
 #endif
+// #ifdef PRINT_DEBUG
+// 			if (pix.x == TARGET_PIXEL_X && pix.y == TARGET_PIXEL_Y) {
+// 				printf("\n\nglobal_id: %d, dL_dopacity: %.10f. dl_dalpha: %.10f. G: %.10f\n\n", global_id, dL_dopacity[global_id], dL_dalpha, G);
+// 			}
+// #endif
 		}
 	}
-// #if PRINT_DEBUG
-// 	printf("\n\n Global id: %d, dL_dopacity = %.20f\n\n", 
-// 	3, dL_dopacity[3]);
-// #endif
+
 }
 
 void BACKWARD::preprocess(

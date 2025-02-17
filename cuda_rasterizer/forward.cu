@@ -15,7 +15,7 @@
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
-#define PRINT_DEBUG 1
+// #define PRINT_DEBUG 1
 #define TARGET_PIXEL_X 217
 #define TARGET_PIXEL_Y 251
 
@@ -64,7 +64,7 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 			}
 		}
 	}
-	result += 0.5f;
+	result += 0.5f ;
 
 	// RGB colors are clamped to positive values. If values are
 	// clamped, we need to keep track of this for the backward pass.
